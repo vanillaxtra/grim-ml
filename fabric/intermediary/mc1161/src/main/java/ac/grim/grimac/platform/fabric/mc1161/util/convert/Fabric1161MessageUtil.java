@@ -7,13 +7,13 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.TextComponent;
 
 public class Fabric1161MessageUtil implements IFabricMessageUtil {
-    @Override
-    public Object textLiteral(String message) {
-        return new TextComponent(message);
-    }
+  @Override
+  public Object textLiteral(String message) {
+    return new TextComponent(message);
+  }
 
-    @Override
-    public void sendMessage(Sender target, Object message, boolean overlay) {
-        ((CommandSourceStack) (Object) target).sendSuccess((Component) message, overlay);
-    }
+  @Override
+  public void sendMessage(Sender target, Object message, boolean overlay) {
+    ((CommandSourceStack) (Object) target).sendSuccess((Component) message, overlay);
+  }
 }

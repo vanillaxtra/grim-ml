@@ -39,18 +39,20 @@ public class OffsetHandler extends Check implements PostPredictionCheck {
 
         if (COMPLETE_CHANNEL.fire(player, this, offset)) return;
 
-        if ((offset >= threshold || offset >= immediateSetbackThreshold)) {
+        if (offset >= adaptive("threshold", threshold) || offset >= adaptive("immediate-setback-threshold", immediateSetbackThreshold)) {
             advantageGained += offset;
             giveOffsetLenienceNextTick(offset);
 
             synchronized (flags) {
                 int flagId = (flags.get() & 255) + 1; // 1-256 as possible values
 
+                setLastFlagMeasuredValue(offset);
+                setLastFlagConfigThreshold(threshold);
                 if (flag(V.write(verbose()).f64(offset), () -> humanFormattedOffset(offset) + " /gl " + flagId)) {
                     flags.incrementAndGet();
                     predictionComplete.setIdentifier(flagId);
 
-                    if ((advantageGained >= maxAdvantage || offset >= immediateSetbackThreshold)
+                    if ((advantageGained >= adaptive("max-advantage", maxAdvantage) || offset >= adaptive("immediate-setback-threshold", immediateSetbackThreshold))
                             && !isNoSetbackPermission()
                             && violations >= setbackViolationThreshold) {
                         player.getSetbackTeleportUtil().executeViolationSetback();

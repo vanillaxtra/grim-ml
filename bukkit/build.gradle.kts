@@ -164,6 +164,21 @@ bukkit {
             default = Permission.Default.FALSE
         }
 
+        register("grim.ml") {
+            description = "Manage grim machine learning system"
+            default = Permission.Default.OP
+        }
+
+        register("grim.ml.legit") {
+            description = "Mark players as legit training sources"
+            default = Permission.Default.OP
+        }
+
+        register("grim.ml.admin") {
+            description = "Administer grim machine learning data"
+            default = Permission.Default.OP
+        }
+
     }
 }
 

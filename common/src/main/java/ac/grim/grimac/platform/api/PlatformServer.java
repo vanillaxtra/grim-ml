@@ -13,4 +13,8 @@ public interface PlatformServer {
     void registerOutgoingPluginChannel(String name);
 
     double getTPS();
+
+    double getMSPT();
+
+    int getOnlinePlayerCount();
 }

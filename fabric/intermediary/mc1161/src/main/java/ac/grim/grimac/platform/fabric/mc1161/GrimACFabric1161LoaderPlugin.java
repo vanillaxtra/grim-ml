@@ -14,35 +14,32 @@ import com.github.retrooper.packetevents.manager.server.ServerVersion;
 
 public class GrimACFabric1161LoaderPlugin extends GrimACFabricIntermediaryLoaderPlugin {
 
-    public GrimACFabric1161LoaderPlugin() {
-        this(
-            new FabricPlatformPlayerFactory(
-                Fabric1161PlatformPlayer::new,
-                Fabric1161GrimEntity::new,
-                Fabric1161PlatformInventory::new
-            ),
-            new Fabric1140PlatformServer(),
-            new Fabric1161MessageUtil(),
-            new Fabric1140ConversionUtil()
-        );
-    }
+  public GrimACFabric1161LoaderPlugin() {
+    this(
+        new FabricPlatformPlayerFactory(
+            Fabric1161PlatformPlayer::new,
+            Fabric1161GrimEntity::new,
+            Fabric1161PlatformInventory::new),
+        new Fabric1140PlatformServer(),
+        new Fabric1161MessageUtil(),
+        new Fabric1140ConversionUtil());
+  }
 
-    protected GrimACFabric1161LoaderPlugin(
-            FabricPlatformPlayerFactory playerFactory,
-            AbstractFabricPlatformServer platformServer,
-            IFabricMessageUtil fabricMessageUtil,
-            IFabricConversionUtil fabricConversionUtil
-    ) {
-        super(GrimACFabricIntermediaryLoaderPlugin::createCommandArguments,
-            playerFactory,
-            platformServer,
-            fabricMessageUtil,
-            fabricConversionUtil
-        );
-    }
+  protected GrimACFabric1161LoaderPlugin(
+      FabricPlatformPlayerFactory playerFactory,
+      AbstractFabricPlatformServer platformServer,
+      IFabricMessageUtil fabricMessageUtil,
+      IFabricConversionUtil fabricConversionUtil) {
+    super(
+        GrimACFabricIntermediaryLoaderPlugin::createCommandArguments,
+        playerFactory,
+        platformServer,
+        fabricMessageUtil,
+        fabricConversionUtil);
+  }
 
-    @Override
-    public ServerVersion getNativeVersion() {
-        return ServerVersion.V_1_16_1;
-    }
+  @Override
+  public ServerVersion getNativeVersion() {
+    return ServerVersion.V_1_16_1;
+  }
 }

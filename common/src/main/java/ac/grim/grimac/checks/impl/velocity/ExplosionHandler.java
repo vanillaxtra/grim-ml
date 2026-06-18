@@ -125,13 +125,13 @@ public class ExplosionHandler extends Check implements PostPredictionCheck {
 
     public boolean shouldIgnoreForPrediction(VectorData data) {
         if (data.isExplosion() && data.isFirstBreadExplosion()) {
-            return player.firstBreadExplosion.offset > offsetToFlag;
+            return player.firstBreadExplosion.offset > adaptive("threshold", offsetToFlag);
         }
         return false;
     }
 
     public boolean wouldFlag() {
-        return (player.likelyExplosions != null && player.likelyExplosions.offset > offsetToFlag) || (player.firstBreadExplosion != null && player.firstBreadExplosion.offset > offsetToFlag);
+        return (player.likelyExplosions != null && player.likelyExplosions.offset > adaptive("threshold", offsetToFlag)) || (player.firstBreadExplosion != null && player.firstBreadExplosion.offset > adaptive("threshold", offsetToFlag));
     }
 
     public void addPlayerExplosion(int breadOne, Vector3d explosion) {
@@ -206,7 +206,7 @@ public class ExplosionHandler extends Check implements PostPredictionCheck {
 
         // 100% known kb was taken
         if (player.likelyExplosions != null && !player.compensatedEntities.self.isDead) {
-            if (player.likelyExplosions.offset > offsetToFlag) {
+            if (player.likelyExplosions.offset > adaptive("threshold", offsetToFlag)) {
                 boolean ignored = player.likelyExplosions.offset == Integer.MAX_VALUE;
                 flagWithSetback(V.write(verbose()).bool(ignored).f64(offset));
             } else {

@@ -10,6 +10,20 @@ run {
     }
 }
 
+val wrapperGradleVersion = run {
+    val props = java.util.Properties()
+    file("gradle/wrapper/gradle-wrapper.properties").inputStream().use { props.load(it) }
+    val url = props.getProperty("distributionUrl").orEmpty()
+    Regex("gradle-([0-9.]+)-").find(url)?.groupValues?.get(1) ?: "0"
+}
+
+if (gradle.gradleVersion != wrapperGradleVersion) {
+    logger.lifecycle(
+        "Note: project wrapper uses Gradle $wrapperGradleVersion but you are running Gradle ${gradle.gradleVersion}. " +
+            "Prefer .\\gradlew for reproducible builds."
+    )
+}
+
 dependencyResolutionManagement {
     versionCatalogs {
         create("libs") {

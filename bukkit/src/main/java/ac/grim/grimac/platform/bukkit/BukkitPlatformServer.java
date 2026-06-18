@@ -39,4 +39,23 @@ public class BukkitPlatformServer implements PlatformServer {
         }
         return SpigotReflectionUtil.getTPS();
     }
+
+    @Override
+    public double getMSPT() {
+        if (GrimAPI.INSTANCE.getPlatform() == Platform.FOLIA) {
+            return Double.NaN;
+        }
+        try {
+            return GrimACBukkitLoaderPlugin.LOADER.getServer().getAverageTickTime();
+        } catch (UnsupportedOperationException | NoSuchMethodError ignored) {
+            double tps = getTPS();
+            if (Double.isNaN(tps) || tps <= 0) return Double.NaN;
+            return 1000.0 / tps;
+        }
+    }
+
+    @Override
+    public int getOnlinePlayerCount() {
+        return Bukkit.getOnlinePlayers().size();
+    }
 }

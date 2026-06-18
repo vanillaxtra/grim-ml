@@ -22,15 +22,14 @@ java {
 spotless {
     java {
         endWithNewline()
-        indentWithSpaces(4)
-        removeUnusedImports()
+        leadingTabsToSpaces(4)
         trimTrailingWhitespace()
         targetExclude("build/generated/**/*")
     }
 
     kotlinGradle {
         endWithNewline()
-        indentWithSpaces(4)
+        leadingTabsToSpaces(4)
         trimTrailingWhitespace()
     }
 }

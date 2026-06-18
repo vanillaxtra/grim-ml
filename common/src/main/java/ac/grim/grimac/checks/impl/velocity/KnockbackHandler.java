@@ -205,7 +205,7 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
         }
 
         if (player.likelyKB != null) {
-            if (player.likelyKB.offset > offsetToFlag) {
+            if (player.likelyKB.offset > adaptive("threshold", offsetToFlag)) {
                 threshold = Math.min(threshold + player.likelyKB.offset, ceiling);
                 if (player.likelyKB.isSetback) { // Don't increase violations if this velocity was setback, just teleport and resend them velocity.
                     if (!isNoSetbackPermission()) {
@@ -229,13 +229,13 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
 
     public boolean shouldIgnoreForPrediction(VectorData data) {
         if (data.isKnockback() && data.isFirstBreadKb()) {
-            return player.firstBreadKB.offset > offsetToFlag;
+            return player.firstBreadKB.offset > adaptive("threshold", offsetToFlag);
         }
         return false;
     }
 
     public boolean wouldFlag() {
-        return (player.likelyKB != null && player.likelyKB.offset > offsetToFlag) || (player.firstBreadKB != null && player.firstBreadKB.offset > offsetToFlag);
+        return (player.likelyKB != null && player.likelyKB.offset > adaptive("threshold", offsetToFlag)) || (player.firstBreadKB != null && player.firstBreadKB.offset > adaptive("threshold", offsetToFlag));
     }
 
     public VelocityData calculateFirstBreadKnockback(int entityID, int transaction) {

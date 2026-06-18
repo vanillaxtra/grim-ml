@@ -38,8 +38,8 @@ public class TimerLimit extends Timer {
     protected void limitFallBehind() {
         // Limit using transaction ping if over 1000ms (default)
         long playerClock = lastMovementPlayerClock;
-        if (limitAbuseOverPing != -1 && System.nanoTime() - playerClock > limitAbuseOverPing) {
-            playerClock = System.nanoTime() - limitAbuseOverPing;
+        if (limitAbuseOverPing != -1 && System.nanoTime() - playerClock > adaptive("ping-abuse-limit-threshold", limitAbuseOverPing)) {
+            playerClock = System.nanoTime() - (long) adaptive("ping-abuse-limit-threshold", limitAbuseOverPing);
         }
         timerBalanceRealTime = Math.max(timerBalanceRealTime, playerClock - clockDrift);
     }

@@ -60,6 +60,8 @@ dependencies {
     api(libs.adventure.text.minimessage)
     api(libs.jetbrains.annotations)
     api(libs.hikaricp)
+    implementation("com.github.haifengl:smile-core:3.1.1")
+    implementation("org.xerial:sqlite-jdbc:3.47.2.0")
 
     api(libs.grim.api)
     api(libs.grim.internal)

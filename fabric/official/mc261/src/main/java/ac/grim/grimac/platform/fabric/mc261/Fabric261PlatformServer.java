@@ -30,6 +30,16 @@ public class Fabric261PlatformServer extends AbstractFabricPlatformServer {
     }
 
     @Override
+    public double getMSPT() {
+        return GrimACFabricOfficialLoaderPlugin.FABRIC_SERVER.getCurrentSmoothedTickTime();
+    }
+
+    @Override
+    public int getOnlinePlayerCount() {
+        return GrimACFabricOfficialLoaderPlugin.FABRIC_SERVER.getPlayerCount();
+    }
+
+    @Override
     public void dispatchCommand(Sender sender, String command) {
         CommandSourceStack stack = (CommandSourceStack) GrimACFabricOfficialLoaderPlugin.LOADER.getFabricSenderFactory().unwrap(sender);
         GrimACFabricOfficialLoaderPlugin.FABRIC_SERVER.getCommands().performPrefixedCommand(stack, command);

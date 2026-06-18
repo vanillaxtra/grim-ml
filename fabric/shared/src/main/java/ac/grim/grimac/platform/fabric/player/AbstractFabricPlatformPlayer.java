@@ -1,9 +1,11 @@
 package ac.grim.grimac.platform.fabric.player;
 
+import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.platform.api.entity.GrimEntity;
 import ac.grim.grimac.platform.api.player.BlockTranslator;
 import ac.grim.grimac.platform.api.player.PlatformInventory;
 import ac.grim.grimac.platform.api.player.PlatformPlayer;
+import ac.grim.grimac.platform.fabric.AbstractFabricPlatformServer;
 import ac.grim.grimac.platform.fabric.FabricPlatformServices;
 import ac.grim.grimac.platform.fabric.entity.AbstractFabricGrimEntity;
 import ac.grim.grimac.platform.fabric.inject.FabricServerPlayerHandle;
@@ -154,5 +156,13 @@ public abstract class AbstractFabricPlatformPlayer<T> extends AbstractFabricGrim
     @Override
     public boolean isDead() {
         return handle().isDead();
+    }
+
+    @Override
+    public boolean isOp() {
+        if (GrimAPI.INSTANCE.getPlatformServer() instanceof AbstractFabricPlatformServer fabricServer) {
+            return fabricServer.hasPermission(getSender(), fabricServer.getOperatorPermissionLevel());
+        }
+        return false;
     }
 }

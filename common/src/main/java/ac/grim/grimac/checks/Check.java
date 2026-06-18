@@ -8,6 +8,7 @@ import ac.grim.grimac.api.storage.verbose.Verbose;
 import ac.grim.grimac.api.storage.verbose.VerboseBuf;
 import ac.grim.grimac.api.storage.verbose.VerboseRenderContext;
 import ac.grim.grimac.internal.storage.verbose.VerboseRegistry;
+import ac.grim.grimac.ml.AdaptiveThresholdEngine;
 import ac.grim.grimac.player.GrimPlayer;
 import com.github.retrooper.packetevents.protocol.packettype.PacketType;
 import com.github.retrooper.packetevents.protocol.packettype.PacketTypeCommon;
@@ -50,6 +51,8 @@ public class Check extends GrimProcessor implements AbstractCheck {
     private boolean noModifyPacketPermission;
     private long lastViolationTime;
     private boolean lastFlagStoredBinaryVerbose;
+    @Setter private double lastFlagMeasuredValue = Double.NaN;
+    @Setter private double lastFlagConfigThreshold = Double.NaN;
 
     public Check(final @NotNull GrimPlayer player) {
         this.player = Objects.requireNonNull(player);
@@ -129,6 +132,7 @@ public class Check extends GrimProcessor implements AbstractCheck {
         player.punishmentManager.handleViolation(this);
         lastViolationTime = System.currentTimeMillis();
         violations++;
+        notifyMlFlag(verbose.get());
         return true;
     }
 
@@ -147,7 +151,21 @@ public class Check extends GrimProcessor implements AbstractCheck {
         violations++;
         GrimAPI.INSTANCE.getDataStoreLifecycle().liveWriteHooks()
                 .recordFlagDataFromCheck(player, this, violations, verboseData);
+        notifyMlFlag(rendered.get());
         return true;
+    }
+
+    protected final double adaptive(String paramKey, double baseValue) {
+        if (stableKey == null || stableKey.isEmpty()) return baseValue;
+        AdaptiveThresholdEngine engine = GrimAPI.INSTANCE.getMlManager().getEngine();
+        if (engine == null) return baseValue;
+        return baseValue * engine.getMultiplier(player, stableKey, paramKey);
+    }
+
+    private void notifyMlFlag(@Nullable String verboseSnapshot) {
+        GrimAPI.INSTANCE.getMlManager().onFlag(this, verboseSnapshot);
+        lastFlagMeasuredValue = Double.NaN;
+        lastFlagConfigThreshold = Double.NaN;
     }
 
     private @NotNull BinaryVerbose lazyVerbose(@NotNull Verbose.Writer writer) {

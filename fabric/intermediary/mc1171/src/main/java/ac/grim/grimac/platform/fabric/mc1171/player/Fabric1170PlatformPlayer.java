@@ -6,12 +6,12 @@ import com.github.retrooper.packetevents.protocol.player.GameMode;
 import net.minecraft.server.level.ServerPlayer;
 
 public class Fabric1170PlatformPlayer extends Fabric1161PlatformPlayer {
-    public Fabric1170PlatformPlayer(ServerPlayer player) {
-        super(player);
-    }
+  public Fabric1170PlatformPlayer(ServerPlayer player) {
+    super(player);
+  }
 
-    @Override
-    public void setGameMode(GameMode gameMode) {
-        serverPlayer().setGameMode(FabricIntermediaryConversionUtil.toFabricGameMode(gameMode));
-    }
+  @Override
+  public void setGameMode(GameMode gameMode) {
+    serverPlayer().setGameMode(FabricIntermediaryConversionUtil.toFabricGameMode(gameMode));
+  }
 }

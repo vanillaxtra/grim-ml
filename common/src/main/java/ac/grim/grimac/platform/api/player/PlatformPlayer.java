@@ -47,4 +47,6 @@ public interface PlatformPlayer extends GrimEntity, OfflinePlatformPlayer {
     default void replaceNativePlayer(Object nativePlayerObject) {}
 
     BlockTranslator getBlockTranslator();
+
+    boolean isOp();
 }

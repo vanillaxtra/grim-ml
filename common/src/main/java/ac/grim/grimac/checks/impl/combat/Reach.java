@@ -345,7 +345,7 @@ public class Reach extends Check implements PacketCheck {
 
     private double applyReachModifiers(SimpleCollisionBox targetBox, boolean hasAttackRange, float itemMaxReach, float itemHitboxMargin, boolean giveMovementThreshold) {
         double maxReach;
-        double hitboxMargin = threshold;
+        double hitboxMargin = adaptive("threshold", threshold);
 
         if (hasAttackRange) {
             maxReach = itemMaxReach;

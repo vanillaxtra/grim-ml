@@ -10,27 +10,24 @@ import net.minecraft.world.entity.LivingEntity;
 
 public class Fabric1161GrimEntity extends AbstractFabricGrimEntity<Entity> {
 
-    public Fabric1161GrimEntity(Entity entity) {
-        super(entity);
-    }
+  public Fabric1161GrimEntity(Entity entity) {
+    super(entity);
+  }
 
-    @Override
-    public CompletableFuture<Boolean> teleportAsync(Location location) {
-        return FabricFutureUtil.supplySync(() -> {
-            if (entity.getCommandSenderWorld() instanceof ServerLevel) {
-                entity.teleportToWithTicket(
-                        location.getX(),
-                        location.getY(),
-                        location.getZ()
-                );
-                return true;
-            }
-            return false;
+  @Override
+  public CompletableFuture<Boolean> teleportAsync(Location location) {
+    return FabricFutureUtil.supplySync(
+        () -> {
+          if (entity.getCommandSenderWorld() instanceof ServerLevel) {
+            entity.teleportToWithTicket(location.getX(), location.getY(), location.getZ());
+            return true;
+          }
+          return false;
         });
-    }
+  }
 
-    @Override
-    public boolean isDead() {
-        return entity instanceof LivingEntity living ? living.isDeadOrDying() : entity.removed;
-    }
+  @Override
+  public boolean isDead() {
+    return entity instanceof LivingEntity living ? living.isDeadOrDying() : entity.removed;
+  }
 }

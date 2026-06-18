@@ -181,4 +181,9 @@ public class BukkitPlatformPlayer extends BukkitGrimEntity implements PlatformPl
     public Player getNative() {
         return this.bukkitPlayer;
     }
+
+    @Override
+    public boolean isOp() {
+        return bukkitPlayer.isOp();
+    }
 }

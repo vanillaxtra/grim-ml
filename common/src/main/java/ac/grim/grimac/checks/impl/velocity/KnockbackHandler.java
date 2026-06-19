@@ -213,6 +213,7 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
                     }
                 } else {
                     boolean ignored = player.likelyKB.offset == Integer.MAX_VALUE;
+                    setMlContext(player.likelyKB.offset, offsetToFlag);
                     if (flag(V.write(verbose()).bool(ignored).f64(player.likelyKB.offset))) { // This velocity was sent by the server.
                         if (player.likelyKB.offset >= immediate || threshold >= maxAdv) {
                             setbackIfAboveSetbackVL();
@@ -221,8 +222,11 @@ public class KnockbackHandler extends Check implements PostPredictionCheck {
                         reward();
                     }
                 }
-            } else if (threshold > 0.05) {
-                threshold *= multiplier;
+            } else {
+                notifyMlBaseline(player.likelyKB.offset, offsetToFlag, "hit");
+                if (threshold > 0.05) {
+                    threshold *= multiplier;
+                }
             }
         }
     }

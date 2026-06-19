@@ -145,6 +145,7 @@ public class PacketPlayerAttack extends PacketListenerAbstract {
 
         if (player.gamemode != GameMode.SPECTATOR) {
             player.attackCooldown.reset();
+            GrimAPI.INSTANCE.getMlManager().onPlayerActivity(player, "attack");
         }
     }
 

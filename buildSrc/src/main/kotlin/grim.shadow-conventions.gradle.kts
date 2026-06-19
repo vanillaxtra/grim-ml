@@ -39,6 +39,33 @@ tasks.named<ShadowJar>("shadowJar") {
         relocate("com.zaxxer", "ac.grim.grimac.shaded.zaxxer") // Database history
     }
     mergeServiceFiles()
+
+    // smile-core drags in ~70mb of openblas natives; tree boost doesnt need them
+    exclude("org/bytedeco/**")
+    exclude("smile/math/blas/**")
+
+    when (BuildConfig.nativeTarget) {
+        BuildConfig.NativeTarget.WINDOWS -> {
+            exclude("org/sqlite/native/Linux/**")
+            exclude("org/sqlite/native/Linux-Android/**")
+            exclude("org/sqlite/native/Linux-Musl/**")
+            exclude("org/sqlite/native/Mac/**")
+            exclude("org/sqlite/native/FreeBSD/**")
+        }
+        BuildConfig.NativeTarget.LINUX -> {
+            exclude("org/sqlite/native/Windows/**")
+            exclude("org/sqlite/native/Mac/**")
+            exclude("org/sqlite/native/FreeBSD/**")
+        }
+        BuildConfig.NativeTarget.MACOS -> {
+            exclude("org/sqlite/native/Windows/**")
+            exclude("org/sqlite/native/Linux/**")
+            exclude("org/sqlite/native/Linux-Android/**")
+            exclude("org/sqlite/native/Linux-Musl/**")
+            exclude("org/sqlite/native/FreeBSD/**")
+        }
+        BuildConfig.NativeTarget.ALL -> Unit
+    }
 }
 
 tasks.named("assemble") {

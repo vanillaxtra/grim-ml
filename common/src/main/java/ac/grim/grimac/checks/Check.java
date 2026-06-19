@@ -162,6 +162,19 @@ public class Check extends GrimProcessor implements AbstractCheck {
         return baseValue * engine.getMultiplier(player, stableKey, paramKey);
     }
 
+    protected final void setMlContext(double measuredValue, double configThreshold) {
+        lastFlagMeasuredValue = measuredValue;
+        lastFlagConfigThreshold = configThreshold;
+    }
+
+    protected final void notifyMlPass(String activity, double measuredValue, double configThreshold) {
+        GrimAPI.INSTANCE.getMlManager().onPass(this, activity, measuredValue, configThreshold);
+    }
+
+    protected final void notifyMlBaseline(double measuredValue, double configThreshold, String activity) {
+        notifyMlPass(activity, measuredValue, configThreshold);
+    }
+
     private void notifyMlFlag(@Nullable String verboseSnapshot) {
         GrimAPI.INSTANCE.getMlManager().onFlag(this, verboseSnapshot);
         lastFlagMeasuredValue = Double.NaN;
@@ -228,6 +241,7 @@ public class Check extends GrimProcessor implements AbstractCheck {
 
     public final void reward() {
         violations = Math.max(0, violations - decay);
+        notifyMlPass("pass", 0, 1.0);
     }
 
     @Override

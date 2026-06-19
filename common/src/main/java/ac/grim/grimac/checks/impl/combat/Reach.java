@@ -63,7 +63,7 @@ public class Reach extends Check implements PacketCheck {
             EntityTypes.BOAT,
             EntityTypes.CHEST_BOAT,
             EntityTypes.SHULKER);
-    private static final CheckResult NONE = new CheckResult(ResultType.NONE, 0, 0, false);
+    private static final CheckResult NONE = new CheckResult(ResultType.NONE, 0, 0, 0, false);
     // Only one flag per reach attack, per entity, per tick.
     // We store position because lastX isn't reliable on teleports.
     private final Int2ObjectMap<InteractionData> playerAttackQueue = new Int2ObjectOpenHashMap<>();
@@ -234,6 +234,7 @@ public class Reach extends Check implements PacketCheck {
             CheckResult result = checkReach(reachEntity, interactionData.x, interactionData.y, interactionData.z, interactionData.hasAttackRange, interactionData.maxReach, interactionData.hitboxMargin, interactionData.attackRangeMovement, false);
             switch (result.type()) {
                 case REACH -> {
+                    setMlContext(result.minDistance(), result.limit());
                     flag(
                             V.write(verbose()).f64(result.minDistance()).uint(reachEntity.getType().getId(player.getClientVersion())),
                             () -> {
@@ -250,6 +251,11 @@ public class Reach extends Check implements PacketCheck {
                         added += ", size=" + sizeable.size;
                     }
                     player.checkManager.getCheck(Hitboxes.class).flag(result.verbose() + added);
+                }
+                case NONE -> {
+                    if (result.minDistance() < Double.MAX_VALUE && result.limit() > 0) {
+                        notifyMlBaseline(result.minDistance(), result.limit(), "pvp");
+                    }
                 }
             }
         }
@@ -309,16 +315,16 @@ public class Reach extends Check implements PacketCheck {
         if ((!blacklisted.contains(reachEntity.getType()) && reachEntity.isLivingEntity) || reachEntity.getType() == EntityTypes.END_CRYSTAL) {
             if (minDistance == Double.MAX_VALUE) {
                 cancelBuffer = 1;
-                return new CheckResult(ResultType.HITBOX, 0, 0, false);
+                return new CheckResult(ResultType.HITBOX, 0, maxReach, 0, false);
             } else if (minDistance > maxReach) {
                 cancelBuffer = 1;
-                return new CheckResult(ResultType.REACH, minDistance, movementAllowance, attackRangeMovement != null);
+                return new CheckResult(ResultType.REACH, minDistance, maxReach, movementAllowance, attackRangeMovement != null);
             } else {
                 cancelBuffer = Math.max(0, cancelBuffer - 0.25);
             }
         }
 
-        return NONE;
+        return new CheckResult(ResultType.NONE, minDistance, maxReach, 0, false);
     }
 
     private SimpleCollisionBox getTargetBox(PacketEntity reachEntity) {
@@ -383,7 +389,7 @@ public class Reach extends Check implements PacketCheck {
         REACH, HITBOX, NONE
     }
 
-    private record CheckResult(ResultType type, double minDistance, double extraMovement, boolean hasExtraMovement) {
+    private record CheckResult(ResultType type, double minDistance, double limit, double extraMovement, boolean hasExtraMovement) {
         public boolean isFlag() {
             return type != ResultType.NONE;
         }

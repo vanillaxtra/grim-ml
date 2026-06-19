@@ -30,6 +30,7 @@ println("    shadePE            = ${BuildConfig.shadePE}")
 println("    relocate           = ${BuildConfig.relocate}")
 println("    mavenLocalOverride = ${BuildConfig.mavenLocalOverride}")
 println("    release            = ${BuildConfig.release}")
+println("    nativeTarget       = ${BuildConfig.nativeTarget}")
 println("    version            = $version")
 
 tasks.register("printVersion") {

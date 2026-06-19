@@ -208,8 +208,10 @@ public class ExplosionHandler extends Check implements PostPredictionCheck {
         if (player.likelyExplosions != null && !player.compensatedEntities.self.isDead) {
             if (player.likelyExplosions.offset > adaptive("threshold", offsetToFlag)) {
                 boolean ignored = player.likelyExplosions.offset == Integer.MAX_VALUE;
+                setMlContext(player.likelyExplosions.offset, offsetToFlag);
                 flagWithSetback(V.write(verbose()).bool(ignored).f64(offset));
             } else {
+                notifyMlBaseline(player.likelyExplosions.offset, offsetToFlag, "hit");
                 reward();
             }
         }

@@ -24,6 +24,14 @@ if (gradle.gradleVersion != wrapperGradleVersion) {
     )
 }
 
+val minGradle = GradleVersion.version("9.2")
+if (GradleVersion.current() < minGradle) {
+    throw GradleException(
+        "Gradle ${gradle.gradleVersion} is too old. Fabric Loom requires Gradle 9.2+. " +
+            "Use the wrapper: .\\gradlew clean build (Gradle $wrapperGradleVersion)"
+    )
+}
+
 dependencyResolutionManagement {
     versionCatalogs {
         create("libs") {

@@ -35,10 +35,12 @@ public class NoSlow extends Check implements PostPredictionCheck {
 
             if (bestOffset > adaptive("threshold", offsetToFlag)) {
                 if (flaggedLastTick) {
+                    setMlContext(bestOffset, offsetToFlag);
                     flagWithSetback();
                 }
                 flaggedLastTick = true;
             } else {
+                notifyMlBaseline(bestOffset, offsetToFlag, "movement");
                 reward();
                 flaggedLastTick = false;
             }

@@ -62,6 +62,7 @@ public class OffsetHandler extends Check implements PostPredictionCheck {
 
             advantageGained = Math.min(advantageGained, maxCeiling);
         } else {
+            notifyMlBaseline(offset, threshold, "movement");
             advantageGained *= setbackDecayMultiplier;
         }
 
@@ -98,6 +99,10 @@ public class OffsetHandler extends Check implements PostPredictionCheck {
     private void removeOffsetLenience() {
         player.uncertaintyHandler.lastHorizontalOffset = 0;
         player.uncertaintyHandler.lastVerticalOffset = 0;
+    }
+
+    public double getBaseThreshold() {
+        return threshold;
     }
 
     @Override

@@ -32,6 +32,7 @@ public class BedStateTracker extends PacketListenerAbstract {
                 player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get(), () -> {
                     player.isInBed = true;
                     player.bedPosition = new Vector3d(bed.getPosition().getX() + 0.5, bed.getPosition().getY(), bed.getPosition().getZ() + 0.5);
+                    GrimAPI.INSTANCE.getMlManager().onPlayerActivity(player, "sleep");
                 });
             }
         }
@@ -43,7 +44,10 @@ public class BedStateTracker extends PacketListenerAbstract {
             if (player != null && player.entityID == animation.getEntityId()
                     && animation.getType() == WrapperPlayServerEntityAnimation.EntityAnimationType.WAKE_UP) {
                 // Split so packet received before transaction
-                player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get() + 1, () -> player.isInBed = false);
+                player.latencyUtils.addRealTimeTask(player.lastTransactionSent.get() + 1, () -> {
+                    player.isInBed = false;
+                    GrimAPI.INSTANCE.getMlManager().onPlayerActivity(player, "wake");
+                });
                 event.getTasksAfterSend().add(player::sendTransaction);
             }
         }

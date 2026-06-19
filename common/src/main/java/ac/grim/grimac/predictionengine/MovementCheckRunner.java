@@ -1,7 +1,9 @@
 package ac.grim.grimac.predictionengine;
 
+import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.api.config.ConfigManager;
 import ac.grim.grimac.checks.Check;
+import ac.grim.grimac.checks.impl.prediction.OffsetHandler;
 import ac.grim.grimac.checks.impl.prediction.Phase;
 import ac.grim.grimac.checks.impl.vehicle.VehicleC;
 import ac.grim.grimac.checks.type.PositionCheck;
@@ -581,6 +583,18 @@ public class MovementCheckRunner extends Check implements PositionCheck {
 
         // We shouldn't attempt to send this prediction analysis into checks if we didn't predict anything
         player.checkManager.onPredictionFinish(new PredictionComplete(offset, update, wasChecked));
+
+        if (wasChecked && !player.skippedTickInActualMovement) {
+            OffsetHandler offsetHandler = player.checkManager.getCheck(OffsetHandler.class);
+            if (offsetHandler != null) {
+                GrimAPI.INSTANCE.getMlManager().onBaseline(
+                        offsetHandler,
+                        offset,
+                        offsetHandler.getBaseThreshold(),
+                        "movement"
+                );
+            }
+        }
 
         player.wasLastPredictionCompleteChecked = wasChecked;
 

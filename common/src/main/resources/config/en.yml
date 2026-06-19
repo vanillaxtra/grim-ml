@@ -231,6 +231,11 @@ update-permission-ticks: -1
 # Machine learning adaptive threshold system
 ml:
     enabled: true
+    log-flags: true
+    log-passes-during-training: true
+    log-activities-during-training: true
+    sample-interval-ms: 2000
+    sample-interval-movement-ms: 500
     auto-trust-op: true
     min-samples-before-adjust: 20
     max-lenience-multiplier: 5.0
@@ -238,6 +243,11 @@ ml:
     retrain-interval-minutes: 30
     server-metrics-interval-ms: 1000
     event-retention-days: 90
+    baseline-samples-enabled: true
+    baseline-trusted-only: false
+    baseline-sample-interval-ms: 3000
+    baseline-sample-weight: 1.0
+    baseline-trusted-weight: 2.0
     ping-buckets: [0, 50, 100, 200, 500, 1000]
     fallback-multipliers:
         0-50: 1.0

@@ -7,6 +7,7 @@ import versioning.BuildConfig.mavenLocalOverride
 import versioning.BuildConfig.release
 import versioning.BuildConfig.relocate
 import versioning.BuildConfig.shadePE
+import versioning.BuildConfig.nativeTarget
 
 /**
  * BuildConfig provides access to user-defined build flags that control how a Grim
@@ -42,8 +43,13 @@ import versioning.BuildConfig.shadePE
  * @property relocate If true, relocates shaded dependencies to avoid conflicts. Default: true.
  * @property release  If true, omits commit hash and modifiers from version string. Default: false.
  * @property mavenLocalOverride If true, will make artifacts in mavenLocal() will be used instead of their remote counterparts for this build. Default: false
+ * @property nativeTarget Which platform sqlite natives to keep in shaded jars. Default: auto-detect build OS.
  */
 object BuildConfig {
+
+    enum class NativeTarget {
+        ALL, WINDOWS, LINUX, MACOS
+    }
 
     /**
      * Must be called once from your root build script to initialize the flags.
@@ -57,6 +63,25 @@ object BuildConfig {
         _relocate = resolveBool(project, "relocate", altKey = "RELOCATE_JAR", default = true)
         _release = resolveBool(project, "release", default = false)
         _mavenLocalOverride = resolveBool(project, "mavenLocalOverride", altKey = "MAVEN_LOCAL_OVERRIDE", default = false)
+        _nativeTarget = resolveNativeTarget(project)
+    }
+
+    private fun resolveNativeTarget(project: Project): NativeTarget {
+        resolveRaw(project, "nativeTarget")?.toDefaultLowerCase()?.let { raw ->
+            return when (raw) {
+                "all" -> NativeTarget.ALL
+                "windows", "win" -> NativeTarget.WINDOWS
+                "linux" -> NativeTarget.LINUX
+                "macos", "mac", "osx" -> NativeTarget.MACOS
+                else -> error("unknown nativeTarget '$raw' (use all, windows, linux, macos)")
+            }
+        }
+        val os = System.getProperty("os.name").toDefaultLowerCase()
+        return when {
+            os.contains("win") -> NativeTarget.WINDOWS
+            os.contains("mac") || os.contains("darwin") -> NativeTarget.MACOS
+            else -> NativeTarget.LINUX
+        }
     }
 
     // Unified resolution logic (System > Gradle > Env)
@@ -77,6 +102,7 @@ object BuildConfig {
     private var _relocate: Boolean? = null
     private var _release: Boolean? = null
     private var _mavenLocalOverride: Boolean? = null
+    private var _nativeTarget: NativeTarget? = null
 
     /** If true, shades PacketEvents into the jar. Default: true. */
     val shadePE: Boolean get() = _shadePE
@@ -92,5 +118,8 @@ object BuildConfig {
 
     val mavenLocalOverride: Boolean get() = _mavenLocalOverride
         ?: error("BuildConfig.release accessed before init() was called")
+
+    val nativeTarget: NativeTarget get() = _nativeTarget
+        ?: error("BuildConfig.nativeTarget accessed before init() was called")
 
 }

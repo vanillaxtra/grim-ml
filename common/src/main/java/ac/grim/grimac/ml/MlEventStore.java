@@ -1,9 +1,6 @@
 package ac.grim.grimac.ml;
 
-import ac.grim.grimac.GrimAPI;
 import ac.grim.grimac.utils.anticheat.LogUtil;
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedWriter;
@@ -11,29 +8,33 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.Supplier;
 
 public final class MlEventStore {
 
-    private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-        Thread thread = new Thread(r, "grim-ml-events");
-        thread.setDaemon(true);
-        return thread;
-    });
+    private volatile @Nullable ExecutorService executor;
 
-    private @Nullable HikariDataSource dataSource;
-    private Path databaseFile;
-    private Path exportFolder;
+    private final AtomicLong approximateEventCount = new AtomicLong();
+
+    private @Nullable Path databaseFile;
+    private @Nullable Path exportFolder;
 
     public void init(Path dataFolder) {
-        shutdown();
+        ensureExecutor();
         Path mlFolder = dataFolder.resolve("ml");
         databaseFile = mlFolder.resolve("events.sqlite");
         exportFolder = mlFolder.resolve("exports");
@@ -43,18 +44,12 @@ public final class MlEventStore {
             LogUtil.warn("failed to create ml folder: " + e.getMessage());
             return;
         }
-
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:sqlite:" + databaseFile.toAbsolutePath());
-        config.setMaximumPoolSize(1);
-        config.setPoolName("grim-ml-events");
-        dataSource = new HikariDataSource(config);
-        createSchema();
+        runSync(this::initDatabase);
     }
 
-    private void createSchema() {
-        if (dataSource == null) return;
-        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
+    private Void initDatabase() {
+        if (databaseFile == null) return null;
+        try (Connection connection = openConnection(); Statement statement = connection.createStatement()) {
             statement.execute("""
                     CREATE TABLE IF NOT EXISTS ml_events (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -62,6 +57,8 @@ public final class MlEventStore {
                         player_uuid TEXT,
                         check_stable_key TEXT,
                         check_name TEXT,
+                        event_type TEXT,
+                        activity TEXT,
                         vl REAL,
                         transaction_ping INTEGER,
                         tps_avg REAL,
@@ -72,130 +69,162 @@ public final class MlEventStore {
                         config_threshold REAL,
                         target_multiplier REAL,
                         sample_weight REAL,
+                        player_state_bits INTEGER,
                         verbose_snapshot TEXT,
                         feature_json TEXT
                     )
                     """);
+            migrateSchema(connection);
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ml_events_trusted ON ml_events(trusted)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ml_events_check ON ml_events(check_stable_key)");
             statement.execute("CREATE INDEX IF NOT EXISTS idx_ml_events_ping ON ml_events(transaction_ping)");
+            statement.execute("CREATE INDEX IF NOT EXISTS idx_ml_events_activity ON ml_events(activity)");
+            approximateEventCount.set(countEvents(connection));
         } catch (Exception e) {
             LogUtil.error("failed to init ml event store", e);
         }
+        return null;
+    }
+
+    private void migrateSchema(Connection connection) throws Exception {
+        if (!columnExists(connection, "event_type")) {
+            try (Statement statement = connection.createStatement()) {
+                statement.execute("ALTER TABLE ml_events ADD COLUMN event_type TEXT");
+                statement.execute("ALTER TABLE ml_events ADD COLUMN activity TEXT");
+                statement.execute("ALTER TABLE ml_events ADD COLUMN player_state_bits INTEGER DEFAULT 0");
+            }
+        }
+    }
+
+    private boolean columnExists(Connection connection, String column) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement("PRAGMA table_info(ml_events)");
+             ResultSet resultSet = statement.executeQuery()) {
+            while (resultSet.next()) {
+                if (column.equalsIgnoreCase(resultSet.getString("name"))) return true;
+            }
+        }
+        return false;
     }
 
     public void writeAsync(MlFeatureVector features, double vl, @Nullable UUID playerUuid) {
-        if (dataSource == null) return;
-        executor.execute(() -> write(features, vl, playerUuid));
+        if (databaseFile == null) return;
+        ensureExecutor().execute(() -> write(features, vl, playerUuid));
     }
 
     private void write(MlFeatureVector features, double vl, @Nullable UUID playerUuid) {
-        if (dataSource == null) return;
+        if (databaseFile == null) return;
         String sql = """
                 INSERT INTO ml_events (
-                    occurred_epoch_ms, player_uuid, check_stable_key, check_name, vl,
-                    transaction_ping, tps_avg, mspt_avg, trusted, false_positive_label,
-                    measured_value, config_threshold, target_multiplier, sample_weight,
+                    occurred_epoch_ms, player_uuid, check_stable_key, check_name, event_type, activity,
+                    vl, transaction_ping, tps_avg, mspt_avg, trusted, false_positive_label,
+                    measured_value, config_threshold, target_multiplier, sample_weight, player_state_bits,
                     verbose_snapshot, feature_json
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
-        try (Connection connection = dataSource.getConnection();
+        try (Connection connection = openConnection();
              PreparedStatement statement = connection.prepareStatement(sql)) {
+            MlConfig config = ac.grim.grimac.GrimAPI.INSTANCE.getMlManager().getConfig();
             statement.setLong(1, System.currentTimeMillis());
             statement.setString(2, playerUuid == null ? null : playerUuid.toString());
             statement.setString(3, features.checkStableKey);
             statement.setString(4, features.checkName);
-            statement.setDouble(5, vl);
-            statement.setInt(6, features.transactionPing);
-            statement.setDouble(7, features.tpsAvg);
-            statement.setDouble(8, features.msptAvg);
-            statement.setInt(9, features.trusted ? 1 : 0);
-            statement.setInt(10, features.falsePositiveLabel);
-            statement.setDouble(11, features.measuredValue);
-            statement.setDouble(12, features.configThreshold);
-            statement.setDouble(13, features.targetMultiplier(GrimAPI.INSTANCE.getMlManager().getConfig()));
-            statement.setDouble(14, features.sampleWeight);
-            statement.setString(15, features.verboseSnapshot);
-            statement.setString(16, toJson(features));
+            statement.setString(5, features.eventType.name());
+            statement.setString(6, features.activity);
+            statement.setDouble(7, vl);
+            statement.setInt(8, features.transactionPing);
+            statement.setDouble(9, features.tpsAvg);
+            statement.setDouble(10, features.msptAvg);
+            statement.setInt(11, features.trusted ? 1 : 0);
+            statement.setInt(12, features.falsePositiveLabel);
+            statement.setDouble(13, features.measuredValue);
+            statement.setDouble(14, features.configThreshold);
+            statement.setDouble(15, features.targetMultiplier(config));
+            statement.setDouble(16, features.sampleWeight);
+            statement.setInt(17, features.playerStateBits());
+            statement.setString(18, features.verboseSnapshot);
+            statement.setString(19, features.toJson());
             statement.executeUpdate();
+            approximateEventCount.incrementAndGet();
         } catch (Exception e) {
             LogUtil.warn("failed to write ml event: " + e.getMessage());
         }
     }
 
-    public List<TrainingSample> loadTrainingSamples() {
-        List<TrainingSample> samples = new ArrayList<>();
-        if (dataSource == null) return samples;
-        String sql = "SELECT measured_value, config_threshold, transaction_ping, tps_avg, mspt_avg, false_positive_label, sample_weight, check_stable_key FROM ml_events";
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql);
-             ResultSet resultSet = statement.executeQuery()) {
-            while (resultSet.next()) {
-                double measured = resultSet.getDouble("measured_value");
-                double threshold = resultSet.getDouble("config_threshold");
-                int ping = resultSet.getInt("transaction_ping");
-                double tps = resultSet.getDouble("tps_avg");
-                double mspt = resultSet.getDouble("mspt_avg");
-                int label = resultSet.getInt("false_positive_label");
-                double weight = resultSet.getDouble("sample_weight");
-                String stableKey = resultSet.getString("check_stable_key");
-                double target;
-                if (threshold > 0 && measured > 0) {
-                    target = Math.min(GrimAPI.INSTANCE.getMlManager().getConfig().getMaxLenienceMultiplier(),
-                            Math.max(1.0, measured / threshold));
-                } else if (label == 1) {
-                    target = GrimAPI.INSTANCE.getMlManager().getConfig().fallbackMultiplier(ping);
-                } else {
-                    target = 1.0;
-                }
-                samples.add(new TrainingSample(
-                        new double[] {
-                                ping / 1000.0,
-                                sanitize(tps) / 20.0,
-                                sanitize(mspt) / 50.0,
-                                stableKeyHash(stableKey),
-                                label
-                        },
-                        target,
-                        weight
-                ));
+    public List<TrainingSample> loadTrainingSamples(MlConfig config) {
+        List<TrainingSample> samples = runSync(() -> {
+            if (databaseFile == null) return List.<TrainingSample>of();
+            String sql = """
+                    SELECT measured_value, config_threshold, transaction_ping, tps_avg, mspt_avg,
+                           false_positive_label, sample_weight, check_stable_key, activity, player_state_bits
+                    FROM ml_events
+                    WHERE event_type = 'FLAG' AND trusted = 1
+                    """;
+            try (Connection connection = openConnection();
+                 PreparedStatement statement = connection.prepareStatement(sql);
+                 ResultSet resultSet = statement.executeQuery()) {
+                return MlTrainingSampleUtil.loadAll(resultSet, config);
+            } catch (Exception e) {
+                LogUtil.warn("failed to load ml training samples: " + e.getMessage());
+                return List.of();
             }
-        } catch (Exception e) {
-            LogUtil.warn("failed to load ml training samples: " + e.getMessage());
-        }
-        return samples;
+        });
+        return samples != null ? samples : List.of();
+    }
+
+    public CompletableFuture<List<TrainingSample>> loadTrainingSamplesAsync(MlConfig config) {
+        return supplyAsync(() -> loadTrainingSamples(config));
+    }
+
+    public long approximateEventCount() {
+        return approximateEventCount.get();
     }
 
     public int countEvents() {
-        if (dataSource == null) return 0;
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM ml_events");
-             ResultSet resultSet = statement.executeQuery()) {
-            if (resultSet.next()) return resultSet.getInt(1);
-        } catch (Exception ignored) {
-        }
-        return 0;
+        return (int) Math.min(Integer.MAX_VALUE, approximateEventCount.get());
     }
 
     public int countTrustedEvents() {
-        if (dataSource == null) return 0;
-        try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM ml_events WHERE trusted = 1");
-             ResultSet resultSet = statement.executeQuery()) {
-            if (resultSet.next()) return resultSet.getInt(1);
-        } catch (Exception ignored) {
-        }
-        return 0;
+        Integer count = runSync(() -> {
+            if (databaseFile == null) return 0;
+            try (Connection connection = openConnection();
+                 PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM ml_events WHERE trusted = 1");
+                 ResultSet resultSet = statement.executeQuery()) {
+                if (resultSet.next()) return resultSet.getInt(1);
+            } catch (Exception ignored) {
+            }
+            return 0;
+        });
+        return count != null ? count : 0;
+    }
+
+    public Map<String, Integer> countByActivity() {
+        Map<String, Integer> counts = runSync(() -> {
+            Map<String, Integer> result = new HashMap<>();
+            if (databaseFile == null) return result;
+            try (Connection connection = openConnection();
+                 PreparedStatement statement = connection.prepareStatement(
+                         "SELECT activity, COUNT(*) AS total FROM ml_events GROUP BY activity");
+                 ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    String activity = resultSet.getString("activity");
+                    result.put(activity == null ? "unknown" : activity, resultSet.getInt("total"));
+                }
+            } catch (Exception ignored) {
+            }
+            return result;
+        });
+        return counts != null ? counts : Map.of();
     }
 
     public void purgeOlderThanDays(int days) {
-        if (dataSource == null || days <= 0) return;
+        if (databaseFile == null || days <= 0) return;
         long cutoff = System.currentTimeMillis() - days * 86_400_000L;
-        executor.execute(() -> {
-            try (Connection connection = dataSource.getConnection();
+        ensureExecutor().execute(() -> {
+            try (Connection connection = openConnection();
                  PreparedStatement statement = connection.prepareStatement("DELETE FROM ml_events WHERE occurred_epoch_ms < ?")) {
                 statement.setLong(1, cutoff);
                 statement.executeUpdate();
+                approximateEventCount.set(countEvents(connection));
             } catch (Exception e) {
                 LogUtil.warn("failed to purge ml events: " + e.getMessage());
             }
@@ -203,57 +232,115 @@ public final class MlEventStore {
     }
 
     public @Nullable Path exportCsv() {
-        if (dataSource == null) return null;
-        try {
-            Files.createDirectories(exportFolder);
-            Path exportFile = exportFolder.resolve("ml-events-" + System.currentTimeMillis() + ".csv");
-            try (Connection connection = dataSource.getConnection();
-                 PreparedStatement statement = connection.prepareStatement("SELECT * FROM ml_events ORDER BY id");
-                 ResultSet resultSet = statement.executeQuery();
-                 BufferedWriter writer = Files.newBufferedWriter(exportFile)) {
-                writer.write("id,occurred_epoch_ms,player_uuid,check_stable_key,check_name,vl,transaction_ping,tps_avg,mspt_avg,trusted,false_positive_label,measured_value,config_threshold,target_multiplier,sample_weight,verbose_snapshot");
-                writer.newLine();
-                while (resultSet.next()) {
-                    writer.write(resultSet.getLong("id") + ",");
-                    writer.write(resultSet.getLong("occurred_epoch_ms") + ",");
-                    writer.write(csv(resultSet.getString("player_uuid")) + ",");
-                    writer.write(csv(resultSet.getString("check_stable_key")) + ",");
-                    writer.write(csv(resultSet.getString("check_name")) + ",");
-                    writer.write(resultSet.getDouble("vl") + ",");
-                    writer.write(resultSet.getInt("transaction_ping") + ",");
-                    writer.write(resultSet.getDouble("tps_avg") + ",");
-                    writer.write(resultSet.getDouble("mspt_avg") + ",");
-                    writer.write(resultSet.getInt("trusted") + ",");
-                    writer.write(resultSet.getInt("false_positive_label") + ",");
-                    writer.write(resultSet.getDouble("measured_value") + ",");
-                    writer.write(resultSet.getDouble("config_threshold") + ",");
-                    writer.write(resultSet.getDouble("target_multiplier") + ",");
-                    writer.write(resultSet.getDouble("sample_weight") + ",");
-                    writer.write(csv(resultSet.getString("verbose_snapshot")));
+        return runSync(() -> {
+            if (databaseFile == null || exportFolder == null) return null;
+            try {
+                Files.createDirectories(exportFolder);
+                Path exportFile = exportFolder.resolve("ml-events-" + System.currentTimeMillis() + ".csv");
+                try (Connection connection = openConnection();
+                     PreparedStatement statement = connection.prepareStatement("SELECT * FROM ml_events ORDER BY id");
+                     ResultSet resultSet = statement.executeQuery();
+                     BufferedWriter writer = Files.newBufferedWriter(exportFile)) {
+                    writer.write("id,occurred_epoch_ms,player_uuid,check_stable_key,check_name,event_type,activity,vl,transaction_ping,tps_avg,mspt_avg,trusted,false_positive_label,measured_value,config_threshold,target_multiplier,sample_weight,player_state_bits,verbose_snapshot");
                     writer.newLine();
+                    while (resultSet.next()) {
+                        writer.write(resultSet.getLong("id") + ",");
+                        writer.write(resultSet.getLong("occurred_epoch_ms") + ",");
+                        writer.write(csv(resultSet.getString("player_uuid")) + ",");
+                        writer.write(csv(resultSet.getString("check_stable_key")) + ",");
+                        writer.write(csv(resultSet.getString("check_name")) + ",");
+                        writer.write(csv(resultSet.getString("event_type")) + ",");
+                        writer.write(csv(resultSet.getString("activity")) + ",");
+                        writer.write(resultSet.getDouble("vl") + ",");
+                        writer.write(resultSet.getInt("transaction_ping") + ",");
+                        writer.write(resultSet.getDouble("tps_avg") + ",");
+                        writer.write(resultSet.getDouble("mspt_avg") + ",");
+                        writer.write(resultSet.getInt("trusted") + ",");
+                        writer.write(resultSet.getInt("false_positive_label") + ",");
+                        writer.write(resultSet.getDouble("measured_value") + ",");
+                        writer.write(resultSet.getDouble("config_threshold") + ",");
+                        writer.write(resultSet.getDouble("target_multiplier") + ",");
+                        writer.write(resultSet.getDouble("sample_weight") + ",");
+                        writer.write(resultSet.getInt("player_state_bits") + ",");
+                        writer.write(csv(resultSet.getString("verbose_snapshot")));
+                        writer.newLine();
+                    }
                 }
+                return exportFile;
+            } catch (Exception e) {
+                LogUtil.warn("failed to export ml csv: " + e.getMessage());
+                return null;
             }
-            return exportFile;
+        });
+    }
+
+    public void clearAll() {
+        ensureExecutor().execute(() -> {
+            if (databaseFile == null) return;
+            try (Connection connection = openConnection(); Statement statement = connection.createStatement()) {
+                statement.execute("DELETE FROM ml_events");
+                approximateEventCount.set(0);
+            } catch (Exception e) {
+                LogUtil.warn("failed to clear ml events: " + e.getMessage());
+            }
+        });
+    }
+
+    public void shutdown() {
+        ExecutorService current = executor;
+        if (current == null) return;
+        current.shutdown();
+        try {
+            current.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+        executor = null;
+    }
+
+    private synchronized ExecutorService ensureExecutor() {
+        if (executor == null || executor.isShutdown()) {
+            executor = Executors.newSingleThreadExecutor(r -> {
+                Thread thread = new Thread(r, "grim-ml-events");
+                thread.setDaemon(true);
+                return thread;
+            });
+        }
+        return executor;
+    }
+
+    private int countEvents(Connection connection) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT COUNT(*) FROM ml_events");
+             ResultSet resultSet = statement.executeQuery()) {
+            if (resultSet.next()) return resultSet.getInt(1);
+        }
+        return 0;
+    }
+
+    private Connection openConnection() throws Exception {
+        if (databaseFile == null) throw new IllegalStateException("ml events database not initialized");
+        return DriverManager.getConnection("jdbc:sqlite:" + databaseFile.toAbsolutePath());
+    }
+
+    private <T> T runSync(Supplier<T> supplier) {
+        try {
+            return ensureExecutor().submit(supplier::get).get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
-            LogUtil.warn("failed to export ml csv: " + e.getMessage());
+            LogUtil.warn("ml events db task failed: " + e.getMessage());
             return null;
         }
     }
 
-    public void clearAll() {
-        if (dataSource == null) return;
-        try (Connection connection = dataSource.getConnection(); Statement statement = connection.createStatement()) {
-            statement.execute("DELETE FROM ml_events");
+    private void runSync(Runnable runnable) {
+        try {
+            ensureExecutor().submit(runnable).get(10, TimeUnit.SECONDS);
         } catch (Exception e) {
-            LogUtil.warn("failed to clear ml events: " + e.getMessage());
+            LogUtil.warn("ml events db task failed: " + e.getMessage());
         }
     }
 
-    public void shutdown() {
-        if (dataSource != null) {
-            dataSource.close();
-            dataSource = null;
-        }
+    private <T> CompletableFuture<T> supplyAsync(Supplier<T> supplier) {
+        return CompletableFuture.supplyAsync(supplier, ensureExecutor());
     }
 
     private static String csv(@Nullable String value) {
@@ -263,34 +350,6 @@ public final class MlEventStore {
             return "\"" + escaped + "\"";
         }
         return escaped;
-    }
-
-    private static String toJson(MlFeatureVector features) {
-        return "{"
-                + "\"ping\":" + features.transactionPing
-                + ",\"keepalivePing\":" + features.keepAlivePing
-                + ",\"tpsAvg\":" + features.tpsAvg
-                + ",\"tpsMin\":" + features.tpsMin
-                + ",\"msptAvg\":" + features.msptAvg
-                + ",\"msptMax\":" + features.msptMax
-                + ",\"onlinePlayers\":" + features.onlinePlayers
-                + ",\"clientVersion\":" + features.clientVersion
-                + ",\"flying\":" + features.flying
-                + ",\"inVehicle\":" + features.inVehicle
-                + ",\"trusted\":" + features.trusted
-                + ",\"op\":" + features.op
-                + ",\"manualLegit\":" + features.manualLegit
-                + ",\"pingBucket\":\"" + features.pingBucketLabel + "\""
-                + "}";
-    }
-
-    private static double sanitize(double value) {
-        return Double.isNaN(value) ? 0.0 : value;
-    }
-
-    private static double stableKeyHash(String stableKey) {
-        if (stableKey == null || stableKey.isEmpty()) return 0;
-        return (stableKey.hashCode() & 0xFFFF) / 65535.0;
     }
 
     public record TrainingSample(double[] features, double target, double weight) {}

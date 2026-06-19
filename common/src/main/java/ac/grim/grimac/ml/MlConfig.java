@@ -11,6 +11,11 @@ import java.util.Map;
 @Getter
 public final class MlConfig {
 
+    private boolean logFlags = true;
+    private boolean logPassesDuringTraining = true;
+    private boolean logActivitiesDuringTraining = true;
+    private long sampleIntervalMs = 2000L;
+    private long sampleIntervalMovementMs = 500L;
     private boolean enabled = true;
     private boolean autoTrustOp = true;
     private int minSamplesBeforeAdjust = 20;
@@ -19,11 +24,21 @@ public final class MlConfig {
     private int retrainIntervalMinutes = 30;
     private long serverMetricsIntervalMs = 1000L;
     private int eventRetentionDays = 90;
+    private boolean baselineSamplesEnabled = true;
+    private boolean baselineTrustedOnly = false;
+    private long baselineSampleIntervalMs = 3000L;
+    private double baselineSampleWeight = 1.0;
+    private double baselineTrustedWeight = 2.0;
     private List<Integer> pingBuckets = List.of(0, 50, 100, 200, 500, 1000);
     private Map<String, Double> fallbackMultipliers = defaultFallbackMultipliers();
 
     public void reload(ConfigManager config) {
         enabled = config.getBooleanElse("ml.enabled", true);
+        logFlags = config.getBooleanElse("ml.log-flags", true);
+        logPassesDuringTraining = config.getBooleanElse("ml.log-passes-during-training", true);
+        logActivitiesDuringTraining = config.getBooleanElse("ml.log-activities-during-training", true);
+        sampleIntervalMs = config.getLongElse("ml.sample-interval-ms", 2000L);
+        sampleIntervalMovementMs = config.getLongElse("ml.sample-interval-movement-ms", 500L);
         autoTrustOp = config.getBooleanElse("ml.auto-trust-op", true);
         minSamplesBeforeAdjust = config.getIntElse("ml.min-samples-before-adjust", 20);
         maxLenienceMultiplier = config.getDoubleElse("ml.max-lenience-multiplier", 5.0);
@@ -31,6 +46,11 @@ public final class MlConfig {
         retrainIntervalMinutes = config.getIntElse("ml.retrain-interval-minutes", 30);
         serverMetricsIntervalMs = config.getLongElse("ml.server-metrics-interval-ms", 1000L);
         eventRetentionDays = config.getIntElse("ml.event-retention-days", 90);
+        baselineSamplesEnabled = config.getBooleanElse("ml.baseline-samples-enabled", true);
+        baselineTrustedOnly = config.getBooleanElse("ml.baseline-trusted-only", false);
+        baselineSampleIntervalMs = config.getLongElse("ml.baseline-sample-interval-ms", 3000L);
+        baselineSampleWeight = config.getDoubleElse("ml.baseline-sample-weight", 1.0);
+        baselineTrustedWeight = config.getDoubleElse("ml.baseline-trusted-weight", 2.0);
 
         List<Integer> buckets = parsePingBuckets(config.getListElse("ml.ping-buckets", List.of(0, 50, 100, 200, 500, 1000)));
         if (buckets.isEmpty()) {

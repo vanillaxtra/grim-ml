@@ -6,6 +6,7 @@ import ac.grim.grimac.api.event.events.GrimJoinEvent;
 import ac.grim.grimac.checks.Check;
 import ac.grim.grimac.manager.init.start.StartableInitable;
 import ac.grim.grimac.manager.init.stop.StoppableInitable;
+import ac.grim.grimac.player.GrimPlayer;
 import ac.grim.grimac.utils.anticheat.LogUtil;
 import ac.grim.grimac.utils.common.ConfigReloadObserver;
 import lombok.Getter;
@@ -14,6 +15,8 @@ import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -24,10 +27,12 @@ public final class MlManager implements StartableInitable, StoppableInitable, Co
     private final LegitTrustManager trustManager = new LegitTrustManager(config);
     private final ServerMetricsSampler sampler = new ServerMetricsSampler();
     private final MlEventStore eventStore = new MlEventStore();
+    private final MlTrainingSessionStore trainingSessionStore = new MlTrainingSessionStore();
+    private final MlBaselineSampler baselineSampler = new MlBaselineSampler();
 
     private MlModelManager modelManager;
     private AdaptiveThresholdEngine engine;
-    private MlFlagListener flagListener;
+    private MlObservationLogger observationLogger;
 
     private @Nullable TaskHandle metricsTask;
     private @Nullable TaskHandle retrainTask;
@@ -46,10 +51,20 @@ public final class MlManager implements StartableInitable, StoppableInitable, Co
         Path dataFolder = GrimAPI.INSTANCE.getGrimPlugin().getDataFolder().toPath();
         trustManager.init(dataFolder);
         eventStore.init(dataFolder);
+        trainingSessionStore.init(dataFolder);
         modelManager = new MlModelManager(config, dataFolder.resolve("ml").resolve("model.ser"));
         modelManager.loadModel();
         engine = new AdaptiveThresholdEngine(config, modelManager, sampler);
-        flagListener = new MlFlagListener(config, trustManager, sampler, eventStore, modelManager, engine, this::queueRetrain);
+        observationLogger = new MlObservationLogger(
+                config,
+                trustManager,
+                sampler,
+                eventStore,
+                trainingSessionStore,
+                baselineSampler,
+                engine,
+                this::queueRetrain
+        );
     }
 
     @Override
@@ -66,18 +81,78 @@ public final class MlManager implements StartableInitable, StoppableInitable, Co
         running = false;
         cancelTask(metricsTask);
         cancelTask(retrainTask);
+        trainingSessionStore.shutdown();
         eventStore.shutdown();
     }
 
     public void onFlag(Check check, @Nullable String verboseSnapshot) {
-        if (flagListener != null) flagListener.onFlag(check, verboseSnapshot);
+        if (observationLogger != null) {
+            observationLogger.logFlag(check, verboseSnapshot, Double.NaN, Double.NaN);
+        }
+    }
+
+    public void onPass(Check check, String activity, double measuredValue, double configThreshold) {
+        if (observationLogger != null) {
+            observationLogger.logPass(check, activity, measuredValue, configThreshold);
+        }
+    }
+
+    public void onBaseline(Check check, double measuredValue, double configThreshold, String activity) {
+        onPass(check, activity, measuredValue, configThreshold);
+    }
+
+    public void onPlayerActivity(GrimPlayer player, String activity) {
+        if (observationLogger != null) {
+            observationLogger.logActivity(player, activity);
+        }
     }
 
     public MlModelManager.TrainResult trainNow() {
-        List<MlEventStore.TrainingSample> samples = eventStore.loadTrainingSamples();
+        List<MlEventStore.TrainingSample> samples = resolveTrainingSamplesSync();
         MlModelManager.TrainResult result = modelManager.train(samples);
         if (result.success()) engine.invalidateCache();
         return result;
+    }
+
+    public CompletableFuture<MlModelManager.TrainResult> trainNowAsync() {
+        return trainingSessionStore.loadTrainingSamplesAsync(config).thenApply(sessionSamples -> {
+            List<MlEventStore.TrainingSample> samples = !sessionSamples.isEmpty()
+                    ? sessionSamples
+                    : eventStore.loadTrainingSamples(config);
+            MlModelManager.TrainResult result = modelManager.train(samples);
+            if (result.success()) engine.invalidateCache();
+            return result;
+        });
+    }
+
+    public CompletableFuture<MlTrainingSessionStore.StartResult> startTrainingAsync() {
+        baselineSampler.clear();
+        return trainingSessionStore.startSessionAsync();
+    }
+
+    public CompletableFuture<MlModelManager.TrainResult> stopTrainingAsync() {
+        return trainingSessionStore.stopSessionAsync(config).thenApply(stopResult -> {
+            if (!stopResult.success()) {
+                return new MlModelManager.TrainResult(false, stopResult.sampleCount(), stopResult.message());
+            }
+            MlModelManager.TrainResult result = modelManager.train(stopResult.samples());
+            if (result.success()) engine.invalidateCache();
+            return result;
+        });
+    }
+
+    public Map<String, Integer> trainingActivityCounts() {
+        return trainingSessionStore.countByActivity();
+    }
+
+    private List<MlEventStore.TrainingSample> resolveTrainingSamplesSync() {
+        List<MlEventStore.TrainingSample> sessionSamples = trainingSessionStore.loadTrainingSamplesAsync(config)
+                .orTimeout(5, TimeUnit.SECONDS)
+                .join();
+        if (!sessionSamples.isEmpty()) {
+            return sessionSamples;
+        }
+        return eventStore.loadTrainingSamples(config);
     }
 
     public void resetModel() {
@@ -114,7 +189,7 @@ public final class MlManager implements StartableInitable, StoppableInitable, Co
         if (!config.isEnabled() || !retrainQueued.compareAndSet(false, true)) return;
         GrimAPI.INSTANCE.getScheduler().getAsyncScheduler().runNow(GrimAPI.INSTANCE.getGrimPlugin(), () -> {
             try {
-                trainNow();
+                trainNowAsync().join();
             } catch (Exception e) {
                 LogUtil.warn("ml retrain failed: " + e.getMessage());
             } finally {

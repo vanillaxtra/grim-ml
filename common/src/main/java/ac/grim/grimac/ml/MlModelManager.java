@@ -25,7 +25,9 @@ public final class MlModelManager {
             new StructField("tps", DataTypes.DoubleType),
             new StructField("mspt", DataTypes.DoubleType),
             new StructField("check", DataTypes.DoubleType),
-            new StructField("label", DataTypes.DoubleType)
+            new StructField("label", DataTypes.DoubleType),
+            new StructField("activity", DataTypes.DoubleType),
+            new StructField("playerState", DataTypes.DoubleType)
     );
 
     private final MlConfig config;
@@ -64,7 +66,7 @@ public final class MlModelManager {
                 y[i] = samples.get(i).target();
             }
 
-            DataFrame frame = DataFrame.of(x, "ping", "tps", "mspt", "check", "label")
+            DataFrame frame = DataFrame.of(x, "ping", "tps", "mspt", "check", "label", "activity", "playerState")
                     .merge(DoubleVector.of("target", y));
             GradientTreeBoost trained = GradientTreeBoost.fit(Formula.lhs("target"), frame);
             this.model = trained;
@@ -95,7 +97,9 @@ public final class MlModelManager {
                 sanitize(tps) / 20.0,
                 sanitize(mspt) / 50.0,
                 stableKeyHash(stableKey),
-                trusted ? 1.0 : 0.0
+                trusted ? 1.0 : 0.0,
+                MlActivityCatalog.activityHash(MlActivityCatalog.fromStableKey(stableKey)),
+                0.0
         };
         GradientTreeBoost current = model;
         if (current == null) return config.fallbackMultiplier(ping);
